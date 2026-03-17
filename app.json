@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "AeroCab Pro",
+    "slug": "aerocab-driver",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "aerocab-driver",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1D2C4D"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.aerocab.driver"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1D2C4D"
+      },
+      "package": "com.aerocab.driver"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "AeroCab Pro a besoin de votre position pour etre visible par les voyageurs.",
+          "locationWhenInUsePermission": "AeroCab Pro a besoin de votre position pour afficher votre emplacement aux voyageurs."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "AeroCab Pro a besoin d'acceder a vos photos pour uploader vos documents.",
+          "cameraPermission": "AeroCab Pro a besoin d'acceder a votre camera pour prendre des photos de documents."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

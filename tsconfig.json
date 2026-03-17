@@ -1,0 +1,20 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"],
+      "@aerocab/shared": ["./packages/shared/src/index.ts"],
+      "@aerocab/mobile-ui": ["./packages/mobile-ui/src/index.ts"]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts",
+    "./packages/mobile-ui/src/**/*.ts",
+    "./packages/mobile-ui/src/**/*.tsx"
+  ]
+}
