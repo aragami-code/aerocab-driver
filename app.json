@@ -1,0 +1,65 @@
+{
+  "expo": {
+    "name": "AeroCab Pro",
+    "slug": "aerocab-driver",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "aerocab-driver",
+    "userInterfaceStyle": "light",
+    "icon": "./assets/images/logo.png",
+    "splash": {
+      "image": "./assets/images/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.landingride.driver",
+      "config": {
+        "googleMapsApiKey": "AIzaSyCqJfoog09aY2nl8IyntKw7XYmC9LDb13k"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/logo.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "package": "com.landingride.driver",
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "ACCESS_BACKGROUND_LOCATION"],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyCqJfoog09aY2nl8IyntKw7XYmC9LDb13k"
+        }
+      }
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/logo.png",
+          "color": "#1D2C4D",
+          "sounds": []
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "AeroCab Pro a besoin de votre position pour signaler votre disponibilité aux passagers.",
+          "locationWhenInUsePermission": "AeroCab Pro a besoin de votre position pour montrer votre disponibilité.",
+          "isIosBackgroundLocationEnabled": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "AeroCab Pro a besoin d'accéder à vos photos pour uploader vos documents."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
