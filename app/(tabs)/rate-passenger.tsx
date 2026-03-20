@@ -14,7 +14,7 @@ import { driverApi } from '../../services/api';
 
 export default function RatePassengerScreen() {
   const token = useAuthStore((s) => s.token)!;
-  const params = useLocalSearchParams<{ passengerId: string; bookingId: string }>();
+  const params = useLocalSearchParams<{ passengerId: string; bookingId: string; conversationId?: string }>();
 
   const [score, setScore] = useState(0);
   const [comment, setComment] = useState('');
@@ -34,7 +34,7 @@ export default function RatePassengerScreen() {
     try {
       await driverApi.ratePassenger(token, {
         toUserId: params.passengerId,
-        conversationId: params.bookingId,
+        conversationId: params.conversationId,
         score,
         comment: comment.trim() || undefined,
       });

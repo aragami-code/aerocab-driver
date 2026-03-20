@@ -94,7 +94,7 @@ export class ApiClient {
         refreshToken: string;
         user: { id: string; phone: string; name: string | null; role: string };
         isNewUser: boolean;
-      }>('/auth/otp/verify', { method: 'POST', body: { phone, code, intendedRole: defaultRole } });
+      }>('/auth/otp/verify', { method: 'POST', body: { phone, code, role: defaultRole } });
     } catch {
       if (DEV_MOCK_MODE) {
         if (code !== DEV_FIXED_OTP) {

@@ -22,7 +22,7 @@ type ConversationPreview = {
 class ConvApiClient extends ApiClient {
   async getConversations(token: string) {
     try {
-      return await this.request<ConversationPreview[]>('/conversations', { token });
+      return await this.request<ConversationPreview[]>('/chat/conversations', { token });
     } catch {
       return [];
     }

@@ -32,7 +32,7 @@ class ChatApiClient extends ApiClient {
 
   async getMessages(token: string, conversationId: string) {
     try {
-      return await this.request<Message[]>(`/conversations/${conversationId}/messages`, { token });
+      return await this.request<Message[]>(`/chat/conversations/${conversationId}/messages`, { token });
     } catch {
       return [];
     }
@@ -40,7 +40,7 @@ class ChatApiClient extends ApiClient {
 
   async sendMessage(token: string, conversationId: string, content: string) {
     try {
-      return await this.request<Message>(`/conversations/${conversationId}/messages`, {
+      return await this.request<Message>(`/chat/conversations/${conversationId}/messages`, {
         method: 'POST', body: { content }, token,
       });
     } catch {

@@ -28,6 +28,7 @@ export default function CompleteDriverProfileScreen() {
   const [vehicleModel, setVehicleModel] = useState('');
   const [vehicleColor, setVehicleColor] = useState('');
   const [vehiclePlate, setVehiclePlate] = useState('');
+  const [vehicleYear, setVehicleYear] = useState('');
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>(['fr']);
   const [showLang, setShowLang] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -39,8 +40,12 @@ export default function CompleteDriverProfileScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!vehicleBrand || !vehicleModel || !vehicleColor || !vehiclePlate) {
+    if (!vehicleBrand || !vehicleModel || !vehicleColor || !vehiclePlate || !vehicleYear) {
       Toast.show({ type: 'error', text1: 'Champs requis', text2: 'Veuillez remplir tous les champs.' });
+      return;
+    }
+    if (!/^\d{4}$/.test(vehicleYear.trim())) {
+      Toast.show({ type: 'error', text1: 'Année invalide', text2: 'Entrez une année à 4 chiffres (ex: 2020).' });
       return;
     }
     if (!token) return;
@@ -51,6 +56,7 @@ export default function CompleteDriverProfileScreen() {
         vehicleModel: vehicleModel.trim(),
         vehicleColor: vehicleColor.trim(),
         vehiclePlate: vehiclePlate.trim().toUpperCase(),
+        vehicleYear: vehicleYear.trim(),
         languages: selectedLanguages,
       });
       router.push('/(auth)/upload-documents');
@@ -83,6 +89,7 @@ export default function CompleteDriverProfileScreen() {
             { label: 'Modèle', value: vehicleModel, setter: setVehicleModel, placeholder: 'Corolla, Tucson…' },
             { label: 'Couleur', value: vehicleColor, setter: setVehicleColor, placeholder: 'Blanc, Noir, Gris…' },
             { label: 'Plaque', value: vehiclePlate, setter: setVehiclePlate, placeholder: 'LT 1234 AB' },
+            { label: 'Année', value: vehicleYear, setter: setVehicleYear, placeholder: 'Ex: 2020' },
           ].map(({ label, value, setter, placeholder }) => (
             <View key={label} style={styles.field}>
               <Text style={styles.label}>{label}</Text>
@@ -92,6 +99,8 @@ export default function CompleteDriverProfileScreen() {
                 onChangeText={setter}
                 placeholder={placeholder}
                 placeholderTextColor={COLORS.grayMedium}
+                keyboardType={label === 'Année' ? 'numeric' : 'default'}
+                maxLength={label === 'Année' ? 4 : undefined}
               />
             </View>
           ))}
