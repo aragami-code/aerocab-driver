@@ -47,6 +47,12 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="ride-request"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
         name="status"
         options={{
           tabBarIcon: ({ focused }) => (

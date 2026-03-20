@@ -6,19 +6,44 @@ import {
   ScrollView,
   Pressable,
   Platform,
+  Alert,
+  AppState,
+  AppStateStatus,
+  ActivityIndicator,
 } from 'react-native';
 import * as Location from 'expo-location';
-import { Clock, XCircle } from 'lucide-react-native';
+import { Clock, XCircle, MapPin, Plane, DollarSign, TrendingUp } from 'lucide-react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
-import { COLORS, SPACING, DRIVER_LOCATION_UPDATE_INTERVAL_MS } from '@aerocab/shared';
-import { ScreenHeader, useHaptic } from '@aerocab/mobile-ui';
+import { router } from 'expo-router';
+import { COLORS, SPACING, DRIVER_LOCATION_UPDATE_INTERVAL_MS, formatCurrency, BORDER_RADIUS } from '@aerocab/shared';
+import { useHaptic } from '@aerocab/mobile-ui';
 import { api } from '../../services/api';
+import { socketService } from '../../services/socket';
 import { useAuthStore } from '../../stores/authStore';
+
+type ActiveRide = {
+  id: string;
+  passengerId: string;
+  passengerName: string | null;
+  passengerPhone: string | null;
+  departureAirport: string;
+  destination: string;
+  flightNumber: string | null;
+  estimatedPrice: number;
+  status: 'confirmed' | 'arrived_at_airport' | 'in_progress';
+};
+
+type Earnings = {
+  today: number;
+  thisWeek: number;
+  thisMonth: number;
+};
 
 export default function DriverDashboardScreen() {
   const user = useAuthStore((s) => s.user);
   const token = useAuthStore((s) => s.token);
   const [profile, setProfile] = useState<{
+    id: string;
     status: string;
     isAvailable: boolean;
     ratingAvg: number;
@@ -28,19 +53,66 @@ export default function DriverDashboardScreen() {
     vehicleModel: string;
   } | null>(null);
   const [toggling, setToggling] = useState(false);
+  const [activeRide, setActiveRide] = useState<ActiveRide | null>(null);
+  const [earnings, setEarnings] = useState<Earnings>({ today: 0, thisWeek: 0, thisMonth: 0 });
+  const [rideActionLoading, setRideActionLoading] = useState(false);
 
   useEffect(() => {
-    if (token) loadProfile();
+    if (token) loadData();
   }, []);
 
-  const loadProfile = async () => {
+  const loadData = async () => {
     try {
       const data = await api.getDriverProfile(token!);
       setProfile(data);
+
+      // Load active ride and earnings in parallel
+      const [rideData, earningsData] = await Promise.all([
+        api.getActiveRide(token!),
+        api.getEarnings(token!),
+      ]);
+      setActiveRide(rideData.booking);
+      setEarnings(earningsData);
     } catch {
       // Profile may not exist yet
     }
   };
+
+  // ===== Socket connection =====
+
+  const connectSocket = useCallback(() => {
+    if (!token || !profile?.id) return;
+
+    const socket = socketService.connect(token);
+    socketService.joinDriverRoom(profile.id);
+
+    socket.on('booking:new_request', (rideData: unknown) => {
+      router.push({
+        pathname: '/(tabs)/ride-request',
+        params: { rideJson: JSON.stringify(rideData) },
+      });
+    });
+  }, [token, profile?.id]);
+
+  useEffect(() => {
+    connectSocket();
+    return () => {
+      socketService.disconnect();
+    };
+  }, [connectSocket]);
+
+  // Reconnect socket when app comes back to foreground
+  useEffect(() => {
+    const handleAppStateChange = (nextState: AppStateStatus) => {
+      if (nextState === 'active') {
+        connectSocket();
+      }
+    };
+    const sub = AppState.addEventListener('change', handleAppStateChange);
+    return () => sub.remove();
+  }, [connectSocket]);
+
+  // ===== Availability toggle =====
 
   const handleToggle = async () => {
     medium();
@@ -57,7 +129,8 @@ export default function DriverDashboardScreen() {
     }
   };
 
-  // --- Driver location tracking ---
+  // ===== Driver location tracking =====
+
   const locationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const sendLocation = useCallback(async () => {
@@ -110,6 +183,64 @@ export default function DriverDashboardScreen() {
       }
     };
   }, [profile?.isAvailable, token, sendLocation]);
+
+  // ===== Ride action handlers =====
+
+  const handleNotifyArrival = async () => {
+    if (!activeRide) return;
+    setRideActionLoading(true);
+    try {
+      await api.notifyArrival(token!, activeRide.id);
+      setActiveRide((prev) => prev ? { ...prev, status: 'arrived_at_airport' } : prev);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erreur';
+      Alert.alert('Erreur', msg);
+    } finally {
+      setRideActionLoading(false);
+    }
+  };
+
+  const handleStartRide = async () => {
+    if (!activeRide) return;
+    setRideActionLoading(true);
+    try {
+      await api.startRide(token!, activeRide.id);
+      setActiveRide((prev) => prev ? { ...prev, status: 'in_progress' } : prev);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erreur';
+      Alert.alert('Erreur', msg);
+    } finally {
+      setRideActionLoading(false);
+    }
+  };
+
+  const handleCompleteRide = () => {
+    Alert.alert(
+      'Terminer la course',
+      'Confirmez-vous la fin de la course ?',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Terminer',
+          style: 'destructive',
+          onPress: async () => {
+            if (!activeRide) return;
+            setRideActionLoading(true);
+            try {
+              await api.completeRide(token!, activeRide.id);
+              setActiveRide(null);
+              await loadData();
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : 'Erreur';
+              Alert.alert('Erreur', msg);
+            } finally {
+              setRideActionLoading(false);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   const { medium } = useHaptic();
 
@@ -206,6 +337,100 @@ export default function DriverDashboardScreen() {
             />
           </View>
         </Pressable>
+      )}
+
+      {/* Active Ride Card */}
+      {isApproved && activeRide && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Course en cours</Text>
+          <View style={styles.rideCard}>
+            <View style={styles.rideRow}>
+              <MapPin size={16} color={COLORS.primary} />
+              <Text style={styles.rideDestination}>{activeRide.destination}</Text>
+            </View>
+            <View style={styles.rideRow}>
+              <Plane size={16} color={COLORS.grayMedium} />
+              <Text style={styles.rideSub}>
+                {activeRide.departureAirport}
+                {activeRide.flightNumber ? ` — Vol ${activeRide.flightNumber}` : ''}
+              </Text>
+            </View>
+            {activeRide.passengerName && (
+              <Text style={styles.ridePassenger}>
+                Passager : {activeRide.passengerName}
+              </Text>
+            )}
+            <Text style={styles.ridePrice}>{formatCurrency(activeRide.estimatedPrice)}</Text>
+
+            <View style={styles.rideStatusRow}>
+              <View
+                style={[
+                  styles.rideStatusBadge,
+                  activeRide.status === 'confirmed' && styles.rideStatusConfirmed,
+                  activeRide.status === 'arrived_at_airport' && styles.rideStatusArrived,
+                  activeRide.status === 'in_progress' && styles.rideStatusInProgress,
+                ]}
+              >
+                <Text style={styles.rideStatusText}>
+                  {activeRide.status === 'confirmed' && 'En route vers l\'aeroport'}
+                  {activeRide.status === 'arrived_at_airport' && 'Arrive a l\'aeroport'}
+                  {activeRide.status === 'in_progress' && 'Course en cours'}
+                </Text>
+              </View>
+            </View>
+
+            {rideActionLoading ? (
+              <ActivityIndicator color={COLORS.primary} style={{ marginTop: SPACING.md }} />
+            ) : (
+              <>
+                {activeRide.status === 'confirmed' && (
+                  <Pressable style={styles.rideActionBtn} onPress={handleNotifyArrival}>
+                    <Text style={styles.rideActionBtnText}>Je suis arrive</Text>
+                  </Pressable>
+                )}
+                {activeRide.status === 'arrived_at_airport' && (
+                  <Pressable style={styles.rideActionBtn} onPress={handleStartRide}>
+                    <Text style={styles.rideActionBtnText}>Passager a bord — Demarrer</Text>
+                  </Pressable>
+                )}
+                {activeRide.status === 'in_progress' && (
+                  <Pressable
+                    style={[styles.rideActionBtn, styles.rideActionBtnComplete]}
+                    onPress={handleCompleteRide}
+                  >
+                    <Text style={styles.rideActionBtnText}>Terminer la course</Text>
+                  </Pressable>
+                )}
+              </>
+            )}
+          </View>
+        </View>
+      )}
+
+      {/* Earnings */}
+      {isApproved && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Gains</Text>
+          <View style={styles.earningsCard}>
+            <View style={styles.earningsRow}>
+              <TrendingUp size={16} color={COLORS.success} />
+              <Text style={styles.earningsLabel}>Aujourd'hui</Text>
+              <Text style={styles.earningsValue}>{formatCurrency(earnings.today)}</Text>
+            </View>
+            <View style={styles.separator} />
+            <View style={styles.earningsRow}>
+              <DollarSign size={16} color={COLORS.primary} />
+              <Text style={styles.earningsLabel}>Cette semaine</Text>
+              <Text style={styles.earningsValue}>{formatCurrency(earnings.thisWeek)}</Text>
+            </View>
+            <View style={styles.separator} />
+            <View style={styles.earningsRow}>
+              <DollarSign size={16} color={COLORS.primaryLight} />
+              <Text style={styles.earningsLabel}>Ce mois</Text>
+              <Text style={styles.earningsValue}>{formatCurrency(earnings.thisMonth)}</Text>
+            </View>
+          </View>
+        </View>
       )}
 
       {/* Stats */}
@@ -341,9 +566,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: `${COLORS.error}25`,
   },
-  statusIcon: {
-    fontSize: 24,
-  },
   statusTitle: {
     fontSize: 15,
     fontWeight: '700',
@@ -430,6 +652,116 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     backgroundColor: COLORS.success,
   },
+  section: {
+    paddingHorizontal: SPACING.lg,
+    marginTop: SPACING.lg,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.grayMedium,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: SPACING.sm,
+  },
+  rideCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: BORDER_RADIUS.card,
+    padding: SPACING.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+    gap: 8,
+  },
+  rideRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  rideDestination: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.black,
+  },
+  rideSub: {
+    fontSize: 13,
+    color: COLORS.grayDark,
+  },
+  ridePassenger: {
+    fontSize: 13,
+    color: COLORS.grayDark,
+  },
+  ridePrice: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: COLORS.primary,
+  },
+  rideStatusRow: {
+    flexDirection: 'row',
+  },
+  rideStatusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  rideStatusConfirmed: {
+    backgroundColor: `${COLORS.warning}20`,
+  },
+  rideStatusArrived: {
+    backgroundColor: `${COLORS.primary}15`,
+  },
+  rideStatusInProgress: {
+    backgroundColor: `${COLORS.success}15`,
+  },
+  rideStatusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.grayDark,
+  },
+  rideActionBtn: {
+    backgroundColor: COLORS.primary,
+    borderRadius: BORDER_RADIUS.button,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: SPACING.sm,
+  },
+  rideActionBtnComplete: {
+    backgroundColor: COLORS.success,
+  },
+  rideActionBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+  earningsCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: BORDER_RADIUS.card,
+    padding: SPACING.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  earningsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  earningsLabel: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.grayDark,
+  },
+  earningsValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.black,
+  },
   statsRow: {
     flexDirection: 'row',
     marginHorizontal: SPACING.lg,
@@ -458,18 +790,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: COLORS.grayMedium,
     fontWeight: '500',
-  },
-  section: {
-    paddingHorizontal: SPACING.lg,
-    marginTop: SPACING.lg,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: COLORS.grayMedium,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: SPACING.sm,
   },
   infoCard: {
     backgroundColor: COLORS.white,

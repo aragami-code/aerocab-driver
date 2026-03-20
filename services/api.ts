@@ -219,6 +219,79 @@ class DriverApiClient extends ApiClient {
       throw new ApiError('Erreur mise a jour position', 500);
     }
   }
+
+  // ===== Ride management =====
+
+  async getActiveRide(token: string) {
+    try {
+      return await this.request<{
+        booking: {
+          id: string;
+          passengerId: string;
+          passengerName: string | null;
+          passengerPhone: string | null;
+          departureAirport: string;
+          destination: string;
+          flightNumber: string | null;
+          estimatedPrice: number;
+          status: 'confirmed' | 'arrived_at_airport' | 'in_progress';
+        } | null;
+      }>('/bookings/active', { token });
+    } catch {
+      if (IS_DEV) return { booking: null };
+      throw new ApiError('Erreur chargement course active', 500);
+    }
+  }
+
+  async getEarnings(token: string) {
+    try {
+      return await this.request<{ today: number; thisWeek: number; thisMonth: number }>(
+        '/bookings/earnings', { token }
+      );
+    } catch {
+      if (IS_DEV) return { today: 0, thisWeek: 0, thisMonth: 0 };
+      throw new ApiError('Erreur gains', 500);
+    }
+  }
+
+  async acceptBooking(token: string, bookingId: string) {
+    return this.request<{ id: string; status: string }>(
+      `/bookings/${bookingId}/accept`, { method: 'POST', token }
+    );
+  }
+
+  async declineBooking(token: string, bookingId: string) {
+    return this.request<{ id: string; status: string }>(
+      `/bookings/${bookingId}/decline`, { method: 'POST', token }
+    );
+  }
+
+  async notifyArrival(token: string, bookingId: string) {
+    return this.request<{ id: string; status: string }>(
+      `/bookings/${bookingId}/arrive`, { method: 'POST', token }
+    );
+  }
+
+  async startRide(token: string, bookingId: string) {
+    return this.request<{ id: string; status: string }>(
+      `/bookings/${bookingId}/start`, { method: 'POST', token }
+    );
+  }
+
+  async completeRide(token: string, bookingId: string) {
+    return this.request<{ id: string; status: string; estimatedPrice: number }>(
+      `/bookings/${bookingId}/complete`, { method: 'POST', token }
+    );
+  }
+
+  async getMyBookings(token: string) {
+    try {
+      return await this.request<{ bookings: unknown[] }>('/bookings/driver/history', { token });
+    } catch {
+      if (IS_DEV) return { bookings: [] };
+      throw new ApiError('Erreur historique', 500);
+    }
+  }
 }
 
 export const api = new DriverApiClient();
