@@ -5,7 +5,7 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MapPin, Car, Users, Clock, X, Check } from 'lucide-react-native';
+import { MapPin, Car, Users, Clock, X, Check, Moon, CloudRain, Package, Plane } from 'lucide-react-native';
 import Toast from 'react-native-toast-message';
 import { COLORS, SPACING, BORDER_RADIUS, formatCurrency } from '../../lib/shared';
 import { useAuthStore } from '../../stores/authStore';
@@ -69,8 +69,31 @@ export default function RideRequestScreen() {
     try {
       await driverApi.acceptBooking(token, ride.id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Toast.show({ type: 'success', text1: 'Course acceptée !', text2: 'Dirigez-vous vers l\'aéroport.' });
-      router.replace('/(tabs)');
+      const isDeparture = ride.type === 'DEPARTURE';
+      Toast.show({ 
+        type: 'success', 
+        text1: 'Course acceptée !', 
+        text2: isDeparture ? 'Allez chercher le passager.' : 'Dirigez-vous vers l\'aéroport.' 
+      });
+      // Construire l'ActiveRide immédiatement depuis les données déjà disponibles
+      // pour affichage instantané sur le dashboard (pas besoin d'attendre l'API)
+      const immediateRide = JSON.stringify({
+        id: ride.id,
+        status: 'confirmed',
+        passengerId: ride.passengerId,
+        passengerName: ride.passengerName,
+        passengerPhone: null,
+        flightNumber: ride.flightNumber,
+        flightStatus: null,
+        destination: ride.destination,
+        vehicleType: ride.vehicleType,
+        estimatedPrice: ride.estimatedPrice,
+        departureAirport: ride.departureAirport,
+        shareTripEnabled: false,
+        type: ride.type ?? 'ARRIVAL',
+        pickupAddress: ride.pickupAddress,
+      });
+      router.replace({ pathname: '/(tabs)', params: { immediateRide } } as never);
     } catch (e: any) {
       Toast.show({ type: 'error', text1: 'Erreur', text2: e?.message ?? 'Impossible d\'accepter.' });
       router.replace('/(tabs)');
@@ -122,24 +145,60 @@ export default function RideRequestScreen() {
 
         {/* Ride card */}
         <View style={styles.rideCard}>
-          <Text style={styles.rideTitle}>Nouvelle demande de course</Text>
-
-          <View style={styles.infoRow}>
-            <MapPin size={18} color={COLORS.primary} />
-            <View style={styles.infoText}>
-              <Text style={styles.infoLabel}>Destination</Text>
-              <Text style={styles.infoValue}>{ride.destination}</Text>
+          <View style={styles.badgeRow}>
+            <Text style={styles.rideTitle}>Nouvelle demande</Text>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              {ride.type === 'INTERNATIONAL' && (
+                <View style={[styles.typeBadge, { backgroundColor: '#7B1FA2', flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+                  <Plane size={11} color={COLORS.white} strokeWidth={2.5} />
+                  <Text style={styles.typeBadgeText}>INTERNATIONAL</Text>
+                </View>
+              )}
+              {ride.type === 'DEPARTURE' && (
+                <View style={[styles.typeBadge, { backgroundColor: COLORS.accent }]}>
+                  <Text style={styles.typeBadgeText}>DÉPART</Text>
+                </View>
+              )}
+              {(!ride.type || ride.type === 'ARRIVAL') && (
+                <View style={[styles.typeBadge, { backgroundColor: COLORS.primary }]}>
+                  <Text style={styles.typeBadgeText}>ARRIVÉE</Text>
+                </View>
+              )}
             </View>
           </View>
 
+          {/* Destination */}
           <View style={styles.infoRow}>
-            <Car size={18} color={COLORS.grayDark} />
+            <MapPin size={18} color={ride.type === 'DEPARTURE' ? COLORS.accent : COLORS.primary} />
             <View style={styles.infoText}>
-              <Text style={styles.infoLabel}>Aéroport de départ</Text>
-              <Text style={styles.infoValue}>{ride.departureAirport}</Text>
+              <Text style={styles.infoLabel}>{ride.type === 'DEPARTURE' ? 'Déposer à' : 'Destination'}</Text>
+              <Text style={styles.infoValue}>{ride.type === 'DEPARTURE' ? ride.departureAirport : ride.destination}</Text>
             </View>
           </View>
 
+          {/* Prise en charge (DEPARTURE) */}
+          {ride.type === 'DEPARTURE' && ride.pickupAddress && (
+            <View style={styles.infoRow}>
+              <Car size={18} color={COLORS.primary} />
+              <View style={styles.infoText}>
+                <Text style={styles.infoLabel}>Prise en charge</Text>
+                <Text style={styles.infoValue}>{ride.pickupAddress}</Text>
+              </View>
+            </View>
+          )}
+
+          {/* Aéroport (ARRIVAL / INTERNATIONAL) */}
+          {ride.type !== 'DEPARTURE' && (
+            <View style={styles.infoRow}>
+              <Car size={18} color={COLORS.grayDark} />
+              <View style={styles.infoText}>
+                <Text style={styles.infoLabel}>Aéroport de départ</Text>
+                <Text style={styles.infoValue}>{ride.departureAirport}</Text>
+              </View>
+            </View>
+          )}
+
+          {/* Vol */}
           {ride.flightNumber && (
             <View style={styles.infoRow}>
               <Clock size={18} color={COLORS.grayDark} />
@@ -150,6 +209,7 @@ export default function RideRequestScreen() {
             </View>
           )}
 
+          {/* Véhicule */}
           <View style={styles.infoRow}>
             <Users size={18} color={COLORS.grayDark} />
             <View style={styles.infoText}>
@@ -158,9 +218,31 @@ export default function RideRequestScreen() {
             </View>
           </View>
 
+          {/* Surcharges actives */}
+          {ride.surgeMultiplier && ride.surgeMultiplier > 1 && (
+            <View style={styles.surgeRow}>
+              <Text style={styles.surgeLabel}>Surcharge ×{ride.surgeMultiplier.toFixed(2)}</Text>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {ride.nightSurge    && <View style={styles.surgeBadge}><Moon      size={11} color="#5C6BC0" /><Text style={[styles.surgeBadgeText, { color: '#5C6BC0' }]}>Nuit</Text></View>}
+                {ride.rainSurge     && <View style={styles.surgeBadge}><CloudRain size={11} color="#0288D1" /><Text style={[styles.surgeBadgeText, { color: '#0288D1' }]}>Pluie</Text></View>}
+              </View>
+            </View>
+          )}
+
+          {/* Consigne */}
+          {ride.withConsigne && (
+            <View style={styles.consigneRow}>
+              <Package size={14} color="#7B1FA2" />
+              <Text style={styles.consigneText}>
+                Consigne : {ride.consigneDays}j × {ride.consigneDailyRate?.toLocaleString()} F = {ride.consigneTotal?.toLocaleString()} F
+              </Text>
+            </View>
+          )}
+
+          {/* Prix */}
           <View style={styles.priceRow}>
-            <Text style={styles.priceLabel}>Tarif estimé</Text>
-            <Text style={styles.priceValue}>{formatCurrency(ride.estimatedPrice)}</Text>
+            <Text style={styles.priceLabel}>Gains estimés</Text>
+            <Text style={styles.priceValue}>{ride.estimatedPrice.toLocaleString()} pts</Text>
           </View>
         </View>
 
@@ -204,7 +286,10 @@ const styles = StyleSheet.create({
     padding: SPACING.lg, marginBottom: SPACING.lg,
     borderWidth: 1.5, borderColor: COLORS.grayLight,
   },
-  rideTitle: { fontSize: 18, fontWeight: '800', color: COLORS.black, marginBottom: SPACING.md },
+  rideTitle: { fontSize: 18, fontWeight: '800', color: COLORS.black },
+  badgeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: SPACING.md },
+  typeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  typeBadgeText: { fontSize: 11, fontWeight: '800', color: COLORS.white },
 
   infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 14 },
   infoText: { flex: 1 },
@@ -233,4 +318,25 @@ const styles = StyleSheet.create({
     borderRadius: BORDER_RADIUS.button, paddingVertical: 16,
   },
   acceptBtnText: { fontSize: 16, fontWeight: '700', color: COLORS.white },
+
+  surgeRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#FFF8E1', borderRadius: 10,
+    paddingHorizontal: 10, paddingVertical: 8, marginBottom: 10,
+    borderWidth: 1, borderColor: '#FFE082',
+  },
+  surgeLabel: { fontSize: 12, fontWeight: '700', color: '#7B5E00' },
+  surgeBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: COLORS.white, borderRadius: 20,
+    paddingHorizontal: 7, paddingVertical: 3,
+  },
+  surgeBadgeText: { fontSize: 10, fontWeight: '600' },
+
+  consigneRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#F3E5F5', borderRadius: 10,
+    paddingHorizontal: 10, paddingVertical: 8, marginBottom: 10,
+  },
+  consigneText: { fontSize: 12, fontWeight: '600', color: '#7B1FA2', flex: 1 },
 });
