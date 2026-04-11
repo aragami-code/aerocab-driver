@@ -1,4 +1,4 @@
-// ===== AeroCab Brand Colors =====
+// ===== AeroGo 24 Brand Colors =====
 export const COLORS = {
   primary: '#1D2C4D',
   primaryLight: '#2A4070',
@@ -33,11 +33,6 @@ export const AIRPORTS = {
     lng: 11.5533,
   },
 } as const;
-
-// ===== Business Constants =====
-export const ACCESS_PRICE = 2500;
-export const ACCESS_CURRENCY = 'XAF';
-export const ACCESS_DURATION_HOURS = 48;
 
 // ===== Auth Constants =====
 export const OTP_LENGTH = 6;
@@ -93,9 +88,7 @@ export const REQUIRED_DRIVER_DOCUMENTS = [
 export const DEFAULT_COUNTRY = {
   code: 'CM',
   name: 'Cameroun',
-  currency: ACCESS_CURRENCY,
-  accessPrice: ACCESS_PRICE,
-  accessDurationHours: ACCESS_DURATION_HOURS,
+  currency: 'XAF',
   paymentMethods: [...PAYMENT_METHODS],
   airports: [AIRPORTS.DLA, AIRPORTS.NSI],
   isActive: true,
@@ -311,9 +304,12 @@ export function formatTimeRemaining(expiresAt: Date): string {
  * Input: 2500 → Output: "2 500 FCFA"
  */
 export function formatCurrency(
-  amount: number,
+  amount: number | null | undefined,
   currency = 'XAF',
 ): string {
+  if (amount === null || amount === undefined || isNaN(amount)) {
+    return `0 ${currency === 'XAF' ? 'FCFA' : currency}`;
+  }
   const formatted = amount.toLocaleString('fr-FR');
   const label = currency === 'XAF' ? 'FCFA' : currency;
   return `${formatted} ${label}`;
