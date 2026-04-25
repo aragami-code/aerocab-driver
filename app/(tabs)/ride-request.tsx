@@ -5,13 +5,69 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MapPin, Car, Users, Clock, X, Check, Moon, CloudRain, Package, Plane } from 'lucide-react-native';
+import { MapPin, Car, Users, Clock, X, Check, Moon, CloudRain, Package, Plane, ChevronRight } from 'lucide-react-native';
 import Toast from 'react-native-toast-message';
-import { COLORS, SPACING, BORDER_RADIUS, formatCurrency } from '../../lib/shared';
+import Animated, {
+  useSharedValue, useAnimatedStyle, withSpring,
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { COLORS, SPACING, BORDER_RADIUS } from '../../lib/shared';
 import { useAuthStore } from '../../stores/authStore';
 import { driverApi, type RideRequest } from '../../services/api';
 
 const COUNTDOWN_SECONDS = 30;
+const THUMB_SIZE = 56;
+const TRACK_PADDING = 4;
+
+// ── Swipe to Accept ───────────────────────────────────────────────────────────
+function SwipeToAccept({ onAccept, disabled }: { onAccept: () => void; disabled: boolean }) {
+  const trackWidth = useSharedValue(0);
+  const translateX = useSharedValue(0);
+
+  const panGesture = Gesture.Pan()
+    .runOnJS(true)
+    .enabled(!disabled)
+    .onUpdate((e) => {
+      const max = Math.max(0, trackWidth.value - THUMB_SIZE - TRACK_PADDING * 2);
+      translateX.value = Math.max(0, Math.min(e.translationX, max));
+    })
+    .onEnd(() => {
+      const max = Math.max(0, trackWidth.value - THUMB_SIZE - TRACK_PADDING * 2);
+      if (max > 0 && translateX.value > max * 0.75) {
+        translateX.value = withSpring(max);
+        onAccept();
+      } else {
+        translateX.value = withSpring(0);
+      }
+    });
+
+  const thumbStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  const labelStyle = useAnimatedStyle(() => {
+    const max = Math.max(1, trackWidth.value - THUMB_SIZE - TRACK_PADDING * 2);
+    const progress = translateX.value / max;
+    return { opacity: Math.max(0, 1 - progress * 2.5) };
+  });
+
+  return (
+    <View
+      style={styles.swipeTrack}
+      onLayout={(e) => { trackWidth.value = e.nativeEvent.layout.width; }}
+    >
+      <Animated.Text style={[styles.swipeLabel, labelStyle]}>
+        Glisser pour accepter
+      </Animated.Text>
+      <ChevronRight size={16} color={`${COLORS.primary}55`} style={styles.swipeArrow} />
+      <GestureDetector gesture={panGesture}>
+        <Animated.View style={[styles.swipeThumb, thumbStyle]}>
+          <Check size={24} color={COLORS.white} strokeWidth={2.5} />
+        </Animated.View>
+      </GestureDetector>
+    </View>
+  );
+}
 
 export default function RideRequestScreen() {
   const token = useAuthStore((s) => s.token)!;
@@ -58,7 +114,7 @@ export default function RideRequestScreen() {
     if (decided) return;
     setDecided(true);
     Toast.show({ type: 'info', text1: 'Temps écoulé', text2: 'La demande a été passée à un autre chauffeur.' });
-    router.replace('/(tabs)');
+    router.replace({ pathname: '/(tabs)', params: { clearRequest: ride?.id ?? '' } } as never);
   };
 
   const handleAccept = async () => {
@@ -70,13 +126,11 @@ export default function RideRequestScreen() {
       await driverApi.acceptBooking(token, ride.id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const isDeparture = ride.type === 'DEPARTURE';
-      Toast.show({ 
-        type: 'success', 
-        text1: 'Course acceptée !', 
-        text2: isDeparture ? 'Allez chercher le passager.' : 'Dirigez-vous vers l\'aéroport.' 
+      Toast.show({
+        type: 'success',
+        text1: 'Course acceptée !',
+        text2: isDeparture ? 'Allez chercher le passager.' : 'Dirigez-vous vers l\'aéroport.'
       });
-      // Construire l'ActiveRide immédiatement depuis les données déjà disponibles
-      // pour affichage instantané sur le dashboard (pas besoin d'attendre l'API)
       const immediateRide = JSON.stringify({
         id: ride.id,
         status: 'confirmed',
@@ -96,7 +150,7 @@ export default function RideRequestScreen() {
       router.replace({ pathname: '/(tabs)', params: { immediateRide } } as never);
     } catch (e: any) {
       Toast.show({ type: 'error', text1: 'Erreur', text2: e?.message ?? 'Impossible d\'accepter.' });
-      router.replace('/(tabs)');
+      router.replace({ pathname: '/(tabs)', params: { clearRequest: ride?.id ?? '' } } as never);
     } finally {
       setLoading(false);
     }
@@ -109,9 +163,9 @@ export default function RideRequestScreen() {
     setLoading(true);
     try {
       await driverApi.declineBooking(token, ride.id);
-      router.replace('/(tabs)');
+      router.replace({ pathname: '/(tabs)', params: { clearRequest: ride.id } } as never);
     } catch {
-      router.replace('/(tabs)');
+      router.replace({ pathname: '/(tabs)', params: { clearRequest: ride?.id ?? '' } } as never);
     } finally {
       setLoading(false);
     }
@@ -127,7 +181,6 @@ export default function RideRequestScreen() {
     );
   }
 
-  const progress = countdown / COUNTDOWN_SECONDS;
   const urgentColor = countdown <= 10 ? COLORS.error : COLORS.primary;
 
   return (
@@ -162,6 +215,11 @@ export default function RideRequestScreen() {
               {(!ride.type || ride.type === 'ARRIVAL') && (
                 <View style={[styles.typeBadge, { backgroundColor: COLORS.primary }]}>
                   <Text style={styles.typeBadgeText}>ARRIVÉE</Text>
+                </View>
+              )}
+              {ride.pricingMode === 'forfait' && (
+                <View style={[styles.typeBadge, { backgroundColor: '#0EA5E9' }]}>
+                  <Text style={styles.typeBadgeText}>FORFAIT</Text>
                 </View>
               )}
             </View>
@@ -251,14 +309,18 @@ export default function RideRequestScreen() {
           <ActivityIndicator color={COLORS.primary} size="large" style={{ marginTop: SPACING.lg }} />
         ) : (
           <View style={styles.actions}>
-            <Pressable style={styles.declineBtn} onPress={handleDecline} disabled={decided}>
+            <Pressable
+              style={styles.declineBtn}
+              onPress={handleDecline}
+              disabled={decided}
+              accessibilityLabel="Refuser la course"
+            >
               <X size={22} color={COLORS.error} strokeWidth={2.5} />
               <Text style={styles.declineBtnText}>Refuser</Text>
             </Pressable>
-            <Pressable style={styles.acceptBtn} onPress={handleAccept} disabled={decided}>
-              <Check size={22} color={COLORS.white} strokeWidth={2.5} />
-              <Text style={styles.acceptBtnText}>Accepter</Text>
-            </Pressable>
+            <View style={{ flex: 2 }}>
+              <SwipeToAccept onAccept={handleAccept} disabled={decided} />
+            </View>
           </View>
         )}
 
@@ -298,26 +360,59 @@ const styles = StyleSheet.create({
 
   priceRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: `${COLORS.primary}08`, borderRadius: 12, padding: SPACING.sm,
+    backgroundColor: `${COLORS.accent}12`, borderRadius: 12, padding: SPACING.sm,
     marginTop: SPACING.xs,
   },
   priceLabel: { fontSize: 13, color: COLORS.grayDark, fontWeight: '500' },
-  priceValue: { fontSize: 20, fontWeight: '800', color: COLORS.primary },
+  priceValue: { fontSize: 20, fontWeight: '800', color: COLORS.accent },
 
-  actions: { flexDirection: 'row', gap: SPACING.sm },
+  actions: { flexDirection: 'row', gap: SPACING.sm, alignItems: 'stretch' },
   declineBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, backgroundColor: `${COLORS.error}12`,
-    borderRadius: BORDER_RADIUS.button, paddingVertical: 16,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, backgroundColor: `${COLORS.error}12`,
+    borderRadius: BORDER_RADIUS.button, paddingVertical: 16, paddingHorizontal: 16,
     borderWidth: 1.5, borderColor: `${COLORS.error}44`,
   },
-  declineBtnText: { fontSize: 16, fontWeight: '700', color: COLORS.error },
-  acceptBtn: {
-    flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, backgroundColor: COLORS.primary,
-    borderRadius: BORDER_RADIUS.button, paddingVertical: 16,
+  declineBtnText: { fontSize: 14, fontWeight: '700', color: COLORS.error },
+
+  // Swipe to accept
+  swipeTrack: {
+    height: 64,
+    backgroundColor: `${COLORS.primary}12`,
+    borderRadius: 32,
+    padding: TRACK_PADDING,
+    flexDirection: 'row',
+    alignItems: 'center',
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: `${COLORS.primary}30`,
   },
-  acceptBtnText: { fontSize: 16, fontWeight: '700', color: COLORS.white },
+  swipeThumb: {
+    width: THUMB_SIZE,
+    height: THUMB_SIZE,
+    borderRadius: THUMB_SIZE / 2,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+  },
+  swipeLabel: {
+    position: 'absolute',
+    left: THUMB_SIZE + TRACK_PADDING + 12,
+    right: 12,
+    textAlign: 'center',
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  swipeArrow: {
+    position: 'absolute',
+    right: 20,
+  },
 
   surgeRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

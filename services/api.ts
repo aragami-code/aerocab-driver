@@ -59,6 +59,8 @@ export type RideRequest = {
   consigneDailyRate?: number;
   consigneTotal?: number;
   consigneVehicleType?: string;
+  // Forfait
+  pricingMode?: 'kilometrage' | 'forfait';
 };
 
 export type FlightStatus = {
@@ -71,7 +73,7 @@ export type FlightStatus = {
 
 export type ActiveRide = {
   id: string;
-  status: 'confirmed' | 'arrived_at_airport' | 'in_progress';
+  status: 'confirmed' | 'arrived_at_airport' | 'in_progress' | 'passenger_confirming' | 'completed';
   passengerId: string;
   passengerName: string | null;
   passengerPhone: string | null;
@@ -82,8 +84,14 @@ export type ActiveRide = {
   estimatedPrice: number;
   departureAirport: string;
   shareTripEnabled: boolean;
-  type: 'ARRIVAL' | 'DEPARTURE';
-  pickupAddress?: string;
+  type: 'ARRIVAL' | 'DEPARTURE' | 'INTERNATIONAL';
+  pickupAddress?: string | null;
+  withConsigne?: boolean;
+  consigneDays?: number | null;
+  consigneDailyRate?: number | null;
+  consigneTotal?: number | null;
+  consigneStatus?: 'active' | 'completed' | 'cancelled' | null;
+  consigneStartedAt?: string | null;
 };
 
 // ── DriverApiClient ───────────────────────────────────────────────────────────
@@ -167,14 +175,16 @@ class DriverApiClient extends ApiClient {
     type: 'cni_front' | 'cni_back' | 'license' | 'registration' | 'vehicle_photo';
     uri: string;
     mimeType?: string;
+    name?: string;
   }) {
     if (IS_DEV) return { id: `doc-mock-${Date.now()}`, type: data.type, status: 'pending' };
 
     const apiUrl = process.env.EXPO_PUBLIC_API_URL!;
     const formData = new FormData();
+    const ext = data.mimeType === 'application/pdf' ? 'pdf' : 'jpg';
     formData.append('file', {
       uri: data.uri,
-      name: `${data.type}.jpg`,
+      name: data.name ?? `${data.type}.${ext}`,
       type: data.mimeType ?? 'image/jpeg',
     } as unknown as Blob);
     formData.append('type', data.type);
@@ -277,6 +287,13 @@ class DriverApiClient extends ApiClient {
     }
   }
 
+  async respondDestinationChange(token: string, bookingId: string, accepted: boolean) {
+    return this.request<{ accepted: boolean }>(
+      `/bookings/${bookingId}/destination/respond`,
+      { method: 'POST', token, body: { accepted } },
+    );
+  }
+
   async getActiveRide(token: string) {
     try {
       return await this.request<{ booking: ActiveRide | null }>(
@@ -347,6 +364,30 @@ class DriverApiClient extends ApiClient {
     }
   }
 
+  // ── Consigne ──────────────────────────────────────────────────────────────
+
+  async startConsigne(token: string, bookingId: string) {
+    try {
+      return await this.request<{ id: string; consigneStatus: string }>(
+        `/bookings/${bookingId}/consigne/start`, { method: 'PATCH', body: {}, token },
+      );
+    } catch {
+      if (IS_DEV) return { id: bookingId, consigneStatus: 'active' };
+      throw new ApiError('Erreur démarrage consigne', 500);
+    }
+  }
+
+  async endConsigne(token: string, bookingId: string) {
+    try {
+      return await this.request<{ id: string; consigneStatus: string; actualDays: number; finalTotal: number }>(
+        `/bookings/${bookingId}/consigne/end`, { method: 'PATCH', body: {}, token },
+      );
+    } catch {
+      if (IS_DEV) return { id: bookingId, consigneStatus: 'completed', actualDays: 1, finalTotal: 8000 };
+      throw new ApiError('Erreur fin consigne', 500);
+    }
+  }
+
   // ── Gains ─────────────────────────────────────────────────────────────────
 
   async getEarnings(token: string) {
@@ -365,22 +406,32 @@ class DriverApiClient extends ApiClient {
     }
   }
 
+  // ── Retraits ─────────────────────────────────────────────────────────────
+
+  async requestWithdrawal(token: string, amount: number, method: string, mobileNumber: string) {
+    return this.request<{ id: string; status: string; amount: number }>(
+      '/drivers/withdraw', { method: 'POST', body: { amount, method, mobileNumber }, token },
+    );
+  }
+
+  async getWithdrawals(token: string, page = 1) {
+    return this.request<{ data: any[]; total: number; page: number }>(
+      `/drivers/withdrawals?page=${page}`, { token },
+    );
+  }
+
   // ── Notation ─────────────────────────────────────────────────────────────
 
   async ratePassenger(token: string, data: {
     toUserId: string;
-    conversationId: string;
+    conversationId?: string;
+    bookingId?: string;
     score: number;
     comment?: string;
   }) {
-    try {
-      return await this.request<{ id: string }>(
-        '/ratings', { method: 'POST', body: data, token },
-      );
-    } catch {
-      if (IS_DEV) return { id: `rating-mock-${Date.now()}` };
-      throw new ApiError('Erreur notation', 500);
-    }
+    return this.request<{ id: string }>(
+      '/ratings', { method: 'POST', body: data, token },
+    );
   }
 
   // ── Détails vol en direct ─────────────────────────────────────────────────
@@ -418,6 +469,49 @@ class DriverApiClient extends ApiClient {
         },
       };
     }
+  }
+
+  // ── Panne chauffeur (D2) ─────────────────────────────────────────────────
+
+  async reportBreakdown(token: string, bookingId: string) {
+    return this.request<{ bookingId: string; replaced: boolean; status: string }>(
+      `/bookings/${bookingId}/breakdown`,
+      { method: 'PATCH', token },
+    );
+  }
+
+  // ── Signalements / Tickets ───────────────────────────────────────────────
+
+  async submitReport(token: string, data: { bookingId?: string; reason: string }) {
+    return this.request('/reports', { method: 'POST', token, body: data });
+  }
+
+  async getMyReports(token: string) {
+    return this.request<any[]>('/reports/me', { token });
+  }
+
+  async getReportById(token: string, id: string) {
+    return this.request<any>(`/reports/${id}`, { token });
+  }
+
+  async addReportMessage(token: string, id: string, message: string, imageUrl?: string) {
+    return this.request<any>(`/reports/${id}/messages`, { method: 'POST', token, body: { message, imageUrl } });
+  }
+
+  async uploadTicketImage(token: string, uri: string) {
+    const baseUrl = this.baseUrl;
+    const formData = new FormData();
+    const filename = uri.split('/').pop() ?? 'image.jpg';
+    const ext = filename.split('.').pop()?.toLowerCase() ?? 'jpg';
+    const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+    (formData as any).append('file', { uri, name: filename, type: mime });
+    const res = await fetch(`${baseUrl}/uploads/ticket-image`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    if (!res.ok) throw new Error('Échec envoi image');
+    return (await res.json()) as { url: string };
   }
 
   // ── Mock ride request (dev uniquement) ───────────────────────────────────
