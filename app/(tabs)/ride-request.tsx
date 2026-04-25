@@ -218,8 +218,8 @@ export default function RideRequestScreen() {
                 </View>
               )}
               {ride.pricingMode === 'forfait' && (
-                <View style={[styles.typeBadge, { backgroundColor: '#0EA5E9' }]}>
-                  <Text style={styles.typeBadgeText}>FORFAIT</Text>
+                <View style={[styles.typeBadge, { backgroundColor: '#DCFCE7' }]}>
+                  <Text style={[styles.typeBadgeText, { color: '#15803D' }]}>🏷️ Prix forfait</Text>
                 </View>
               )}
             </View>
