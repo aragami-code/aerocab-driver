@@ -1,13 +1,16 @@
 import { COLORS, BORDER_RADIUS, SPACING, MIN_TOUCH_TARGET } from './shared';
 import { useThemeStore } from '../stores/themeStore';
+import { activeBrand } from './brand';
 
 export const theme = {
   colors: {
-    primary: COLORS.primary,
-    primaryLight: COLORS.primaryLight,
-    primaryDark: COLORS.primaryDark,
-    accent: COLORS.accent,
-    accentLight: COLORS.accentLight,
+    get primary() { return activeBrand.primary; },
+    get primaryLight() { return activeBrand.primaryLight; },
+    get primaryDark() { return activeBrand.primaryDark; },
+    get accent() { return activeBrand.accent; },
+    get accentLight() { return activeBrand.accentLight; },
+    get onPrimary() { return activeBrand.onPrimary; },
+    get onAccent() { return activeBrand.onAccent; },
     black: COLORS.black,
     textPrimary: COLORS.black,
     textSecondary: COLORS.grayDark,
@@ -47,15 +50,17 @@ export const theme = {
   },
 
   minTouchTarget: MIN_TOUCH_TARGET,
-} as const;
+};
 
 export const darkTheme = {
   colors: {
-    primary: COLORS.primary,
-    primaryLight: COLORS.primaryLight,
-    primaryDark: COLORS.primaryDark,
-    accent: COLORS.accent,
-    accentLight: COLORS.accentLight,
+    get primary() { return activeBrand.primary; },
+    get primaryLight() { return activeBrand.primaryLight; },
+    get primaryDark() { return activeBrand.primaryDark; },
+    get accent() { return activeBrand.accent; },
+    get accentLight() { return activeBrand.accentLight; },
+    get onPrimary() { return activeBrand.onPrimary; },
+    get onAccent() { return activeBrand.onAccent; },
     black: '#FFFFFF',
     textPrimary: '#FFFFFF',
     textSecondary: '#B0B0B0',
@@ -95,7 +100,7 @@ export const darkTheme = {
   },
 
   minTouchTarget: MIN_TOUCH_TARGET,
-} as const;
+};
 
 export type Theme = typeof theme;
 
