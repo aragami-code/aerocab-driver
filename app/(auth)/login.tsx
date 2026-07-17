@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Pressable,
   ScrollView,
   ActivityIndicator,
+  BackHandler,
 } from 'react-native';
 import { router } from 'expo-router';
 import Svg, { Path, G } from 'react-native-svg';
@@ -15,6 +16,7 @@ import { COLORS, SPACING, BORDER_RADIUS } from '../../lib/shared';
 import { Button, Input } from '../../lib/mobile-ui';
 import { ChevronUp, ChevronDown, Check, ChevronLeft } from 'lucide-react-native';
 import { api } from '../../services/api';
+import { ChannelPicker, type Channel } from '../../components/ChannelPicker';
 import { useLanguageStore } from '../../stores/languageStore';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
@@ -216,6 +218,11 @@ function AppleLogo({ size = 20, color = '#000' }: { size?: number; color?: strin
 }
 
 export default function LoginScreen() {
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
+    return () => sub.remove();
+  }, []);
+
   const [phone, setPhone] = useState('');
   const [selectedCountry, setSelectedCountry] = useState(
     COUNTRY_CODES.find((c) => c.code === '+237') ?? COUNTRY_CODES[0]
@@ -224,6 +231,8 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [channel, setChannel] = useState<Channel>('sms');
   const { t } = useLanguageStore();
 
   const setAuth = useAuthStore((s) => s.setAuth);
@@ -239,19 +248,35 @@ export default function LoginScreen() {
       if (result.type === 'success') {
         const url = result.url;
         const params = new URLSearchParams(url.split('?')[1] || '');
-        const accessToken = params.get('accessToken');
-        const refreshToken = params.get('refreshToken');
-        const userId = params.get('userId');
-        const userName = params.get('userName');
-        const userRole = params.get('userRole');
         const error = params.get('error');
 
-        if (error || !accessToken || !userId) {
+        if (error) {
           setError('Échec connexion Google');
           return;
         }
 
-        const isNewUser = params.get('isNewUser') === '1';
+        // C1 — Échange le code éphémère (30s) contre les vrais tokens.
+        const authCode = params.get('authCode');
+        if (!authCode) {
+          setError('Échec connexion Google : code manquant');
+          return;
+        }
+
+        const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api';
+        const exchangeRes = await fetch(`${apiUrl}/auth/google/exchange`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ authCode }),
+        });
+        if (!exchangeRes.ok) {
+          setError('Échec connexion Google : code expiré');
+          return;
+        }
+        const { accessToken, refreshToken, userId, userName, userRole, isNewUser } = await exchangeRes.json() as {
+          accessToken: string; refreshToken: string; userId: string;
+          userName: string; userRole: string; isNewUser: boolean;
+        };
+
         const user: User = {
           id: userId,
           phone: '',
@@ -265,10 +290,11 @@ export default function LoginScreen() {
           updatedAt: new Date(),
         };
 
-        setAuth(user, accessToken, refreshToken!, isNewUser);
+        setAuth(user, accessToken, refreshToken, isNewUser);
 
         if (isNewUser) {
-          router.replace('/(auth)/complete-profile');
+          // D1 — Nouveau chauffeur via Google → CGU obligatoire avant complete-driver-profile
+          router.replace('/(auth)/accept-terms' as never);
         } else {
           router.replace('/(tabs)');
         }
@@ -294,13 +320,39 @@ export default function LoginScreen() {
     const fullPhone = `${selectedCountry.code}${trimmedPhone}`;
     setError('');
     setLoading(true);
+
+    // Découvre les canaux disponibles (SMS/WhatsApp/Email). Silencieux si indisponible.
+    let available = channels;
+    if (available.length === 0) {
+      try {
+        const res = await api.getOtpChannels(fullPhone);
+        available = (res.channels ?? []) as Channel[];
+        if (available.length > 0) {
+          setChannels(available);
+          const def = (res.default as Channel) ?? available[0];
+          setChannel(available.includes(def) ? def : available[0]);
+        }
+        // Plus d'un canal → on laisse l'utilisateur choisir avant l'envoi.
+        if (available.length > 1) {
+          setLoading(false);
+          return;
+        }
+      } catch {
+        // Endpoint indisponible → on retombe sur l'envoi par défaut (SMS).
+      }
+    }
+
+    let sent = false;
     try {
-      await api.sendOtp(fullPhone);
-      router.push({ pathname: '/verify-otp', params: { phone: fullPhone } });
+      await api.sendOtp(fullPhone, available.length ? channel : undefined);
+      sent = true;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t.auth.sendError);
     } finally {
       setLoading(false);
+    }
+    if (sent) {
+      router.push(`/verify-otp?phone=${encodeURIComponent(fullPhone)}` as never);
     }
   };
 
@@ -383,6 +435,11 @@ export default function LoginScreen() {
             </View>
           )}
 
+          {/* Channel selector (SMS / WhatsApp / Email) — visible si plusieurs canaux */}
+          {channels.length > 1 && (
+            <ChannelPicker channels={channels} value={channel} onChange={setChannel} />
+          )}
+
           {/* Continue button */}
           <Pressable
             style={[styles.continueBtn, loading && styles.continueBtnDisabled]}
@@ -444,7 +501,7 @@ export default function LoginScreen() {
             if (router.canGoBack()) {
               router.back();
             } else {
-              router.replace('/(onboarding)');
+              router.replace('/');
             }
           }}
         >

@@ -14,21 +14,23 @@ export const useLanguageStore = create<LanguageState>()(
   persist(
     (set) => ({
       lang: 'fr',
-      t: translations.fr,
-      setLang: (lang) => set({ lang, t: translations[lang] }),
+      t: translations.fr as Translations,
+      setLang: (lang) => set({ lang, t: translations[lang] as Translations }),
       toggle: () =>
         set((state) => {
-          const next: Lang = state.lang === 'fr' ? 'en' : 'fr';
-          return { lang: next, t: translations[next] };
+          const langs: Lang[] = ['fr', 'en', 'ar', 'es', 'zh'];
+          const idx = langs.indexOf(state.lang);
+          const next = langs[(idx + 1) % langs.length];
+          return { lang: next, t: translations[next] as Translations };
         }),
     }),
     {
-      name: 'landingride-language',
+      name: 'aerogo24-driver-language',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({ lang: state.lang }),
       onRehydrateStorage: () => (state) => {
         if (state) {
-          state.t = translations[state.lang];
+          state.t = translations[state.lang] as Translations;
         }
       },
     }

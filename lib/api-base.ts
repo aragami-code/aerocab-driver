@@ -1,8 +1,35 @@
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api';
+export const DEFAULT_ROLE = 'driver';
+
+// Origine de l'API (sans /api) — pour résoudre les médias en chemin relatif (images d'annonces)
+export const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, '');
+
+export function resolveMediaUrl(url?: string | null): string | undefined {
+  if (!url) return undefined;
+  if (/^https?:\/\//i.test(url)) return url;
+  return `${API_ORIGIN}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
+// S352 — Callback déclenché sur 401 (JWT expiré) → logout + redirect login
+let _onUnauthorized: (() => void) | null = null;
+export function registerUnauthorizedHandler(cb: () => void) {
+  _onUnauthorized = cb;
+}
+
+let _getRefreshToken: (() => string | null) | null = null;
+let _onTokenRefreshed: ((accessToken: string, refreshToken: string) => void) | null = null;
+export function registerTokenRefreshHandlers(
+  getRefreshToken: () => string | null,
+  onTokenRefreshed: (accessToken: string, refreshToken: string) => void,
+) {
+  _getRefreshToken = getRefreshToken;
+  _onTokenRefreshed = onTokenRefreshed;
+}
+
+let _refreshPromise: Promise<{ accessToken: string; refreshToken: string }> | null = null;
 
 // DEV mock mode: disabled when EXPO_PUBLIC_API_URL is set (real backend)
-const DEV_MOCK_MODE = !process.env.EXPO_PUBLIC_API_URL && (typeof __DEV__ !== 'undefined' ? __DEV__ : true);
-const DEV_FIXED_OTP = '123456';
+export const DEV_MOCK_MODE = !process.env.EXPO_PUBLIC_API_URL && (typeof __DEV__ !== 'undefined' ? __DEV__ : true);
 
 type RequestOptions = {
   method?: string;
@@ -53,7 +80,30 @@ export class ApiClient {
 
       const data = await response.json();
 
+      if (response.status === 401 && token && _getRefreshToken && _onTokenRefreshed) {
+        try {
+          const refreshed = await this.doRefreshToken();
+          if (refreshed) {
+            const retryHeaders = { ...headers, Authorization: `Bearer ${refreshed.accessToken}` };
+            const retryRes = await fetch(`${this.baseUrl}${endpoint}`, {
+              method,
+              headers: retryHeaders,
+              body: body ? JSON.stringify(body) : undefined,
+            });
+            const retryData = await retryRes.json();
+            if (retryRes.ok) return retryData as T;
+          }
+        } catch {
+          // refresh failed, fall through to logout
+        }
+        if (_onUnauthorized) _onUnauthorized();
+        throw new ApiError(data.message || 'Session expirée', 401, data);
+      }
+
       if (!response.ok) {
+        if (response.status === 401 && token && _onUnauthorized) {
+          _onUnauthorized();
+        }
         throw new ApiError(
           data.message || 'Une erreur est survenue',
           response.status,
@@ -70,36 +120,71 @@ export class ApiClient {
     }
   }
 
+  private async doRefreshToken(): Promise<{ accessToken: string; refreshToken: string } | null> {
+    if (_refreshPromise) return _refreshPromise;
+    const rt = _getRefreshToken?.();
+    if (!rt) return null;
+    _refreshPromise = this.refreshToken(rt);
+    try {
+      const result = await _refreshPromise;
+      _onTokenRefreshed?.(result.accessToken, result.refreshToken);
+      return result;
+    } catch {
+      return null;
+    } finally {
+      _refreshPromise = null;
+    }
+  }
+
   // ===== Auth endpoints (shared) =====
 
-  async sendOtp(phone: string) {
+  async getOtpChannels(identifier: string) {
+    return this.request<{ channels: ('sms' | 'whatsapp' | 'email')[]; default: string }>(
+      '/auth/otp/channels',
+      { method: 'POST', body: { identifier } },
+    );
+  }
+
+  async sendOtp(phone: string, channel?: 'sms' | 'whatsapp' | 'email') {
     try {
       return await this.request<{ message: string; expiresIn: number }>(
         '/auth/otp/send',
-        { method: 'POST', body: { phone } },
+        { method: 'POST', body: { phone, ...(channel ? { channel } : {}) } },
       );
-    } catch {
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
       if (DEV_MOCK_MODE) {
-        console.log(`[MOCK] OTP envoye a ${phone}: ${DEV_FIXED_OTP}`);
+        console.log(`[MOCK] OTP envoye a ${phone} (code dans les logs backend)`);
         return { message: 'OTP envoye (mode dev)', expiresIn: 300 };
       }
       throw new ApiError("Echec de l'envoi du code", 500);
     }
   }
 
-  async verifyOtp(phone: string, code: string, defaultRole: string = 'passenger') {
+  async linkPhoneSend(token: string, phone: string, channel: 'sms' | 'whatsapp') {
+    return this.request<{ message: string; expiresIn: number }>(
+      '/auth/phone/link/send',
+      { method: 'POST', body: { phone, channel }, token },
+    );
+  }
+
+  async linkPhoneVerify(token: string, phone: string, code: string) {
+    return this.request<{ id: string; phone: string; countryCode: string | null; profileComplete: boolean }>(
+      '/auth/phone/link/verify',
+      { method: 'POST', body: { phone, code }, token },
+    );
+  }
+
+  async verifyOtp(phone: string, code: string, defaultRole: string = DEFAULT_ROLE) {
     try {
       return await this.request<{
         accessToken: string;
         refreshToken: string;
         user: { id: string; phone: string; name: string | null; role: string };
         isNewUser: boolean;
-      }>('/auth/otp/verify', { method: 'POST', body: { phone, code, role: defaultRole } });
+      }>('/auth/otp/verify', { method: 'POST', body: { phone, code, intendedRole: defaultRole } });
     } catch {
       if (DEV_MOCK_MODE) {
-        if (code !== DEV_FIXED_OTP) {
-          throw new ApiError('Code OTP incorrect (dev: utilisez 123456)', 401);
-        }
         console.log(`[MOCK] OTP verifie pour ${phone}`);
         const mockUser = {
           id: `dev-${defaultRole}-001`,
@@ -149,17 +234,10 @@ export class ApiClient {
 
   async updateProfile(
     token: string,
-    data: { name?: string; email?: string },
+    data: any,
   ) {
     try {
-      return await this.request<{
-        id: string;
-        phone: string;
-        name: string | null;
-        email: string | null;
-        role: string;
-        avatarUrl: string | null;
-      }>('/users/me', { method: 'PATCH', body: data, token });
+      return await this.request<any>('/users/me', { method: 'PATCH', body: data, token });
     } catch {
       if (DEV_MOCK_MODE) {
         console.log('[MOCK] updateProfile', data);

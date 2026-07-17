@@ -79,7 +79,7 @@ export default function VerifyOtpScreen() {
     setError('');
 
     const fullCode = newOtp.join('');
-    if (fullCode.length === OTP_LENGTH && !fullCode.includes('') && !loading) {
+    if (fullCode.length === OTP_LENGTH && !newOtp.includes('') && !loading) {
       handleVerify(fullCode);
     }
   };
@@ -129,10 +129,8 @@ export default function VerifyOtpScreen() {
       );
 
       if (result.isNewUser) {
-        // New passenger → complete profile
-        router.replace('/(auth)/complete-profile');
+        router.replace('/(auth)/accept-terms' as never);
       } else {
-        // Existing passenger → main tabs
         router.replace('/(tabs)');
       }
     } catch (err: unknown) {
@@ -171,6 +169,7 @@ export default function VerifyOtpScreen() {
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <ArrowLeft size={20} color={COLORS.primary} />
         </Pressable>
+        <Text style={styles.stepText}>Étape 1 / 4</Text>
       </View>
 
       <View style={styles.content}>
@@ -208,6 +207,8 @@ export default function VerifyOtpScreen() {
               keyboardType="number-pad"
               maxLength={index === 0 ? OTP_LENGTH : 1}
               selectTextOnFocus
+              textContentType={index === 0 ? 'oneTimeCode' : 'none'}
+              autoComplete={index === 0 ? 'one-time-code' : 'off'}
             />
           ))}
         </View>
@@ -262,7 +263,11 @@ const styles = StyleSheet.create({
   header: {
     paddingTop: Platform.OS === 'ios' ? 56 : 40,
     paddingHorizontal: SPACING.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
+  stepText: { fontSize: 12, fontWeight: '600', color: COLORS.primary },
   backButton: {
     width: 44,
     height: 44,

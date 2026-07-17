@@ -16,7 +16,7 @@ export const useThemeStore = create<ThemeState>()(
       setDark: (dark) => set({ isDark: dark }),
     }),
     {
-      name: 'aerocab-theme',
+      name: 'aerogo24-driver-theme',
       storage: createJSONStorage(() => AsyncStorage),
     }
   )

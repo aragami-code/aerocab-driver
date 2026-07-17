@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "AeroCab Pro",
-    "slug": "aerocab-driver",
+    "name": "AeroGo 24 Chauffeur",
+    "slug": "aerogo24-driver",
     "version": "0.1.0",
     "orientation": "portrait",
-    "scheme": "aerocab-driver",
+    "scheme": "aerogo24-driver",
     "userInterfaceStyle": "light",
     "icon": "./assets/images/logo.png",
     "splash": {
@@ -12,12 +12,14 @@
       "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.landingride.driver",
+      "bundleIdentifier": "com.aerogo24.driver",
       "config": {
-        "googleMapsApiKey": "AIzaSyCqJfoog09aY2nl8IyntKw7XYmC9LDb13k"
+        "googleMapsApiKey": ""
       }
     },
     "android": {
@@ -25,16 +27,26 @@
         "foregroundImage": "./assets/images/logo.png",
         "backgroundColor": "#FFFFFF"
       },
-      "package": "com.landingride.driver",
-      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "ACCESS_BACKGROUND_LOCATION"],
+      "package": "com.aerogo24.driver",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION"
+      ],
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyCqJfoog09aY2nl8IyntKw7XYmC9LDb13k"
+          "apiKey": ""
         }
       }
     },
     "plugins": [
       "expo-router",
+      [
+        "react-native-maps",
+        {
+          "googleMapsApiKey": ""
+        }
+      ],
       [
         "expo-notifications",
         {
@@ -46,17 +58,18 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "AeroCab Pro a besoin de votre position pour signaler votre disponibilité aux passagers.",
-          "locationWhenInUsePermission": "AeroCab Pro a besoin de votre position pour montrer votre disponibilité.",
+          "locationAlwaysAndWhenInUsePermission": "AeroGo 24 Pro a besoin de votre position pour signaler votre disponibilité aux passagers.",
+          "locationWhenInUsePermission": "AeroGo 24 Pro a besoin de votre position pour montrer votre disponibilité.",
           "isIosBackgroundLocationEnabled": true
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "AeroCab Pro a besoin d'accéder à vos photos pour uploader vos documents."
+          "photosPermission": "AeroGo 24 Pro a besoin d'accéder à vos photos pour uploader vos documents."
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true

@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import Toast from 'react-native-toast-message';
 import { useAnnouncementsStore } from '../stores/announcementsStore';
 import { useAuthStore } from '../stores/authStore';
+import { resolveMediaUrl } from '../lib/api-base';
 
 export function AnnouncementModal() {
   const token = useAuthStore(s => s.token);
@@ -24,8 +25,8 @@ export function AnnouncementModal() {
     <Modal transparent animationType="fade" visible>
       <View style={{ flex: 1, backgroundColor: '#0008', justifyContent: 'center', padding: 24 }}>
         <View style={{ backgroundColor: '#fff', borderRadius: 20, overflow: 'hidden' }}>
-          {current.imageUrl ? (
-            <Image source={{ uri: current.imageUrl }} style={{ width: '100%', height: 160 }} />
+          {resolveMediaUrl(current.imageUrl) ? (
+            <Image source={{ uri: resolveMediaUrl(current.imageUrl) }} style={{ width: '100%', height: 160 }} />
           ) : null}
           <View style={{ padding: 20, gap: 10 }}>
             <Text style={{ fontSize: 18, fontWeight: '800' }}>{current.title}</Text>

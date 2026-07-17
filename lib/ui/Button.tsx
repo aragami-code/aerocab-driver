@@ -16,6 +16,7 @@ interface ButtonProps {
   disabled?: boolean;
   loading?: boolean;
   style?: ViewStyle;
+  textStyle?: TextStyle;
 }
 
 export function Button({
@@ -26,6 +27,7 @@ export function Button({
   disabled = false,
   loading = false,
   style,
+  textStyle,
 }: ButtonProps) {
   const isDisabled = disabled || loading;
 
@@ -59,6 +61,7 @@ export function Button({
             size === 'small' && styles.textSmall,
             size === 'large' && styles.textLarge,
             (variant === 'outline' || variant === 'ghost') && styles.textOutline,
+            textStyle,
           ]}
         >
           {title}

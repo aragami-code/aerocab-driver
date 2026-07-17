@@ -1,7 +1,13 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import type { User } from './shared';
+
+const secureStorage = {
+  getItem: (key: string) => SecureStore.getItemAsync(key),
+  setItem: (key: string, value: string) => SecureStore.setItemAsync(key, value),
+  removeItem: (key: string) => SecureStore.deleteItemAsync(key),
+};
 
 export interface AuthState {
   user: User | null;
@@ -12,6 +18,7 @@ export interface AuthState {
   _hasHydrated: boolean;
   setAuth: (user: User, token: string, refreshToken: string, isNewUser: boolean) => void;
   setUser: (user: User) => void;
+  setTokens: (token: string, refreshToken: string) => void;
   logout: () => void;
   setHasHydrated: (state: boolean) => void;
 }
@@ -32,6 +39,8 @@ export function createAuthStore(storageKey: string) {
 
         setUser: (user) => set({ user }),
 
+        setTokens: (token, refreshToken) => set({ token, refreshToken }),
+
         logout: () =>
           set({
             user: null,
@@ -45,7 +54,7 @@ export function createAuthStore(storageKey: string) {
       }),
       {
         name: storageKey,
-        storage: createJSONStorage(() => AsyncStorage),
+        storage: createJSONStorage(() => secureStorage),
         partialize: (state) => ({
           user: state.user,
           token: state.token,

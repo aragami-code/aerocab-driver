@@ -1,10 +1,16 @@
 import { io, Socket } from 'socket.io-client';
 
-const SOCKET_URL = process.env.EXPO_PUBLIC_API_URL?.replace('/api', '') ?? '';
+const SOCKET_URL = process.env.EXPO_PUBLIC_API_URL?.replace(/\/api$/, '') ?? '';
 
 class SocketService {
   private socket: Socket | null = null;
   private _token: string | null = null;
+  private _driverId: string | null = null;
+  private _getToken: (() => string | null) | null = null;
+
+  setTokenGetter(fn: () => string | null) {
+    this._getToken = fn;
+  }
 
   /** Connecte (ou retourne la socket existante). Passer token à la première connexion. */
   connect(token?: string): Socket {
@@ -12,7 +18,6 @@ class SocketService {
 
     if (this.socket?.connected) return this.socket;
 
-    // Nettoyer la socket périmée avant de recréer
     if (this.socket) {
       this.socket.removeAllListeners();
       this.socket.disconnect();
@@ -21,16 +26,28 @@ class SocketService {
 
     this.socket = io(SOCKET_URL, {
       auth: { token: this._token },
-      transports: ['websocket'],
+      transports: ['polling', 'websocket'],
       reconnection: true,
-      reconnectionAttempts: 10,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 2000,
-      reconnectionDelayMax: 10_000,
+      reconnectionDelayMax: 30_000,
     });
 
-    this.socket.on('connect', () =>
-      console.log('[Socket] connecté', this.socket?.id),
-    );
+    this.socket.on('reconnect_attempt', () => {
+      const freshToken = this._getToken?.();
+      if (freshToken && this.socket) {
+        this.socket.auth = { token: freshToken };
+      }
+    });
+
+    this.socket.on('connect', () => {
+      console.log('[Socket] connecté', this.socket?.id);
+      // Rejoindre automatiquement la room driver après reconnexion
+      if (this._driverId) {
+        this.socket?.emit('join:driver', { driverId: this._driverId });
+        console.log('[Socket] rejoint driver room:', this._driverId);
+      }
+    });
     this.socket.on('disconnect', (reason) =>
       console.log('[Socket] déconnecté', reason),
     );
@@ -43,6 +60,7 @@ class SocketService {
 
   /** Rejoindre la room du chauffeur (utiliser le driverId du profil, pas le JWT). */
   joinDriverRoom(driverId: string) {
+    this._driverId = driverId;
     this.socket?.emit('join:driver', { driverId });
   }
 
